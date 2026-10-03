@@ -49,7 +49,7 @@ npx wrangler secret bulk .dev.vars
 
 Configure these under the repository's **Settings → Secrets and variables → Actions**:
 
-- Secret `CLOUDFLARE_API_TOKEN`: an API token scoped to the target Cloudflare account with Workers Scripts, D1, and Workflows edit permissions plus Account Settings read. A local Wrangler OAuth login cannot authenticate GitHub Actions. See [Cloudflare's CI setup](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/).
+- Secret `CLOUDFLARE_API_TOKEN`: an API token scoped to the target Cloudflare account with Workers Scripts and D1 edit permissions plus Account Settings read. Workers Scripts edit also covers Workflows deployment. A local Wrangler OAuth login cannot authenticate GitHub Actions. See [Cloudflare's CI setup](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/).
 - Variable `CLOUDFLARE_ACCOUNT_ID`: the account owning the Worker and D1 database.
 
 `DAYTONA_API_KEY` and `ADMIN_TOKEN` remain Worker secrets in Cloudflare. Routine deployments preserve them; they do not belong in GitHub source or CI credentials. Pull request checks have no deployment credentials and do not run paid benchmarks. If deploying a fork to another account, update the database ID in `wrangler.jsonc`, the deployment URL in the workflow, and upload the Worker secrets once using the local deploy instructions.
