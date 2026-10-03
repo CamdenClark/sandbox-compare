@@ -13,7 +13,7 @@ function stream(...frames: Uint8Array[]): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 const output = (text: string) => connectFrame({ event: { data: { stdout: btoa(text) } } });
-const ended = (exitCode = 0) => connectFrame({ event: { end: { exited: true, ...(exitCode ? { exitCode } : {}) } } });
+const ended = (exitCode = 0) => connectFrame({ event: { end: { exited: true, ...(exitCode ? { exitCode, error: `exit status ${exitCode}` } : {}) } } });
 const terminal = () => connectFrame({}, 2);
 afterEach(() => vi.unstubAllGlobals());
 
@@ -23,6 +23,28 @@ describe('E2B command verification', () => {
     const data = [...bytes].map(byte => connectFrame({ event: { data: { stdout: btoa(String.fromCharCode(byte)) } } }));
     expect(decodeCommand(stream(...data, ended(), terminal()))).toEqual({ exitCode: 0, result: 'healthy ✓' });
     expect(decodeCommand(stream(output('failed'), ended(7), terminal()))).toEqual({ exitCode: 7, result: 'failed' });
+  });
+  it('retries a real E2B nonzero health result until the server responds', async () => {
+    vi.useFakeTimers();
+    let alive = false, probes = 0;
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.includes('/process.Process/Start')) {
+        const command = JSON.parse(new TextDecoder().decode((init?.body as Uint8Array).subarray(5))).process.args[2];
+        if (command.includes('curl') && ++probes === 1) return new Response(stream(ended(7), terminal()));
+        return new Response(stream(output(command.includes('BENCH_READY') ? 'BENCH_READY' : 'SANDBOX_HEALTHY'), ended(), terminal()));
+      }
+      if (init?.method === 'POST') { alive = true; return Response.json({ sandboxID: 'test', templateID: 'base', envdAccessToken: 'sandbox-secret' }); }
+      if (init?.method === 'DELETE') { alive = false; return new Response(null, { status: 204 }); }
+      if (url.includes('/v2/sandboxes')) return Response.json([]);
+      return alive ? Response.json({ sandboxID: 'test', templateID: 'base', cpuCount: 2, memoryMB: 512, diskSizeMB: 10240 }) : Response.json({}, { status: 404 });
+    });
+    try {
+      const result = runSample(new E2BProvider(env), E2B_SCENARIOS[1], 'report', 1, 'TEST');
+      await vi.runAllTimersAsync();
+      const sample = await result;
+      expect(sample.status).toBe('passed'); expect(sample.cleanup).toBe('deleted');
+      expect(probes).toBe(2); expect(sample.healthyMs).toBeGreaterThanOrEqual(250);
+    } finally { vi.useRealTimers(); }
   });
   it('rejects HTTP-success streams with RPC errors, missing exits, or truncated envelopes', () => {
     for (const bytes of [

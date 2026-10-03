@@ -47,10 +47,12 @@ export function decodeCommand(bytes: Uint8Array): CommandResult {
       }
     }
     if (event?.end) {
-      if (event.end.error || event.end.exited !== true) throw new Error(`E2B process did not exit normally: ${event.end.error ?? event.end.status ?? 'unknown'}`);
       // Protobuf JSON omits zero-valued scalar fields.
       exitCode = event.end.exitCode ?? 0;
       if (!Number.isInteger(exitCode)) throw new Error('Invalid E2B exit code.');
+      // Envd includes an error string for ordinary nonzero shell exits, such as
+      // curl's exit 7 while a server starts. Return those to the health poller.
+      if (exitCode === 0 && (event.end.error || event.end.exited !== true)) throw new Error(`E2B process did not exit normally: ${event.end.error ?? event.end.status ?? 'unknown'}`);
     }
   }
   if (!terminal || exitCode === null) throw new Error('E2B command stream ended without a confirmed process exit.');
