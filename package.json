@@ -1,0 +1,32 @@
+{
+  "name": "sandbox-compare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite build && wrangler dev --test-scheduled",
+    "dev:ui": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy": "npm run build && wrangler deploy",
+    "db:local": "wrangler d1 migrations apply sandbox-compare --local",
+    "db:remote": "wrangler d1 migrations apply sandbox-compare --remote",
+    "cf-typegen": "wrangler types",
+    "eval": "node scripts/run-eval.mjs"
+  },
+  "dependencies": {
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vitest": "latest",
+    "wrangler": "latest"
+  }
+}

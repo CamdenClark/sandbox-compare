@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sandbox-compare",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "sandbox-compare",
+    "database_id": "77450b6e-f91e-4067-a955-bce3a701c63f",
+    "migrations_dir": "migrations"
+  }],
+  "workflows": [{
+    "binding": "BENCHMARK",
+    "name": "sandbox-compare-benchmark",
+    "class_name": "BenchmarkWorkflow"
+  }],
+  "triggers": { "crons": ["0 * * * *"] },
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "secrets": { "required": ["DAYTONA_API_KEY", "ADMIN_TOKEN"] },
+  "vars": {
+    "DAYTONA_API_URL": "https://app.daytona.io/api",
+    "DAYTONA_TOOLBOX_URL": "https://proxy.app.daytona.io/toolbox"
+  }
+}
