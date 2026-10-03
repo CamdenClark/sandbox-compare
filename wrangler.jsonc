@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "sandbox-compare",
+  "account_id": "62025cd9ce8dabd2cb6651b6e058d41a",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-02",
   "compatibility_flags": ["nodejs_compat"],
@@ -13,7 +14,7 @@
   "d1_databases": [{
     "binding": "DB",
     "database_name": "sandbox-compare",
-    "database_id": "77450b6e-f91e-4067-a955-bce3a701c63f",
+    "database_id": "9fca2745-d7c0-473e-91ae-d86faebe7088",
     "migrations_dir": "migrations"
   }],
   "workflows": [{

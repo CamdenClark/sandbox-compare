@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: production
-      url: https://sandbox-compare.sync-cheap.workers.dev
+      url: https://sandbox-compare.camdenclark.workers.dev
     concurrency:
       group: production-deployment
       cancel-in-progress: false
@@ -64,14 +64,14 @@ jobs:
             exit 1
           fi
           npm run db:remote
-          npx --no-install wrangler deploy
+          npm run cf -- deploy
       - name: Check public site
         run: |
           curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
             --connect-timeout 10 --max-time 30 \
-            https://sandbox-compare.sync-cheap.workers.dev/ -o /tmp/site.html
+            https://sandbox-compare.camdenclark.workers.dev/ -o /tmp/site.html
           node --input-type=module -e "import fs from 'node:fs'; if (!fs.readFileSync('/tmp/site.html', 'utf8').includes('Sandbox Index')) process.exit(1)"
           curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
             --connect-timeout 10 --max-time 30 \
-            https://sandbox-compare.sync-cheap.workers.dev/api/dashboard -o /tmp/dashboard.json
+            https://sandbox-compare.camdenclark.workers.dev/api/dashboard -o /tmp/dashboard.json
           node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync('/tmp/dashboard.json', 'utf8')); if (!Array.isArray(data.reports) || !data.providers.some(p => p.id === 'daytona' && p.connected)) process.exit(1)"

@@ -4,7 +4,7 @@ A public sandbox benchmarking site on Cloudflare Workers, with D1 measurement st
 
 ## Run locally
 
-Requires Node 22+ and an authenticated Wrangler CLI.
+Requires Node 22+. Deployment commands use `CLOUDFLARE_API_TOKEN` from the environment or `.dev.vars`, falling back to the local Wrangler login. The account is explicit in `wrangler.jsonc`.
 
 ```sh
 npm ci
@@ -21,7 +21,7 @@ The public page shows results, history, methodology, pricing, and data downloads
 ## Run a real evaluation
 
 ```sh
-npm run eval -- https://sandbox-compare.sync-cheap.workers.dev
+npm run eval -- https://sandbox-compare.camdenclark.workers.dev
 # Or use the URL printed by wrangler deploy, or http://localhost:8787.
 ```
 
@@ -37,11 +37,11 @@ The Wrangler configuration includes the database created for this workspace. For
 
 ```sh
 npm run db:remote
+npm run secrets:upload
 npm run deploy
-npx wrangler secret bulk .dev.vars
 ```
 
-`wrangler deploy` publishes the static site, API, Workflow, and hourly cron. `secret bulk` securely uploads the local key and admin token. Never place either in `wrangler.jsonc` or command arguments.
+`npm run deploy` publishes the static site, API, Workflow, and hourly cron. `npm run secrets:upload` securely uploads only `DAYTONA_API_KEY` and `ADMIN_TOKEN` from `.dev.vars`. It keeps the Cloudflare deployment token out of Worker bindings. Never place credentials in `wrangler.jsonc` or command arguments.
 
 ## GitHub deployment
 
@@ -97,7 +97,7 @@ Tests cover lost create responses, key redaction, output verification, delayed h
 
 ## First verified live results
 
-On October 2, 2026, the deployed Worker completed [report 8e41163](https://sandbox-compare.sync-cheap.workers.dev/api/reports/8e411631-a09e-4ec6-8c54-75d4b995f968.json): nine of nine samples passed, with every sandbox deletion confirmed. Each workload used three fresh `daytona-small` instances in the US region.
+On October 2, 2026, the deployed Worker completed [report 8e41163](https://sandbox-compare.camdenclark.workers.dev/api/reports/8e411631-a09e-4ec6-8c54-75d4b995f968.json): nine of nine samples passed, with every sandbox deletion confirmed. Each workload used three fresh `daytona-small` instances in the US region.
 
 | Workload | Create API median | Command ready median | Healthy median |
 | --- | --- | --- | --- |
@@ -105,4 +105,4 @@ On October 2, 2026, the deployed Worker completed [report 8e41163](https://sandb
 | Python HTTP server | 115 ms | 273 ms | 557 ms |
 | Node HTTP server | 121 ms | 259 ms | 658 ms |
 
-The separate [image validation report](https://sandbox-compare.sync-cheap.workers.dev/api/reports/5965855a-57ac-4b68-bdaf-d4309dbbfa5a.json) completed four of four samples, including a fresh `python:3.12-slim` image sandbox that reached verified shell health in 11.366 seconds. This is one image-build observation, not an image startup distribution. Initial failed integration reports remain in the archive.
+The separate [image validation report](https://sandbox-compare.camdenclark.workers.dev/api/reports/5965855a-57ac-4b68-bdaf-d4309dbbfa5a.json) completed four of four samples, including a fresh `python:3.12-slim` image sandbox that reached verified shell health in 11.366 seconds. This is one image-build observation, not an image startup distribution. Initial failed integration reports remain in the archive.

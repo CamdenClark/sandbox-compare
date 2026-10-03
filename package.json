@@ -9,9 +9,11 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "deploy": "npm run build && wrangler deploy",
+    "cf": "node scripts/cloudflare.mjs",
+    "deploy": "npm run build && npm run cf -- deploy",
+    "secrets:upload": "node scripts/upload-secrets.mjs",
     "db:local": "wrangler d1 migrations apply sandbox-compare --local",
-    "db:remote": "wrangler d1 migrations apply sandbox-compare --remote",
+    "db:remote": "node scripts/cloudflare.mjs d1 migrations apply sandbox-compare --remote",
     "cf-typegen": "wrangler types",
     "eval": "node scripts/run-eval.mjs"
   },
