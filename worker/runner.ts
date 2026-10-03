@@ -1,6 +1,5 @@
 import type { Sample, Scenario } from '../src/shared';
-import type { SandboxHandle, SandboxProvider } from './providers/types';
-import { ProviderError } from './providers/daytona';
+import { ProviderError, type SandboxHandle, type SandboxProvider } from './providers/types';
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 export function safeError(error: unknown, secrets: string[]): string {
@@ -9,12 +8,13 @@ export function safeError(error: unknown, secrets: string[]): string {
   return message.slice(0, 1000);
 }
 export async function runSample(provider: SandboxProvider, scenario: Scenario, reportId: string, repetition: number, runnerColo: string, secrets: string[] = []): Promise<Sample> {
+  const redacted = [...secrets];
   const name = `sbi-${reportId}-${scenario.id}-${repetition}`;
   const t0 = Date.now(); let sandbox: SandboxHandle | null = null;
   const sample: Sample = {
     id: `${reportId}-${scenario.id}-${repetition}`, reportId, scenarioId: scenario.id, scenarioName: scenario.name, provider: scenario.provider,
     repetition, startedAt: new Date(t0).toISOString(), finishedAt: '', status: 'failed', sandboxId: null,
-    region: scenario.region, actualSource: null, resources: { cpu: scenario.cpu, memory: scenario.memory, disk: scenario.disk },
+    region: scenario.region, actualSource: null, resources: { cpu: null, memory: null, disk: null },
     createApiMs: null, startedMs: null, commandReadyMs: null, workloadMs: null, healthyMs: null, cleanupMs: null,
     lifetimeMs: 0, estimatedCostUsd: null, cleanup: 'not-created', error: null, output: '', runnerColo, probeAttempts: 0,
   };
@@ -26,6 +26,7 @@ export async function runSample(provider: SandboxProvider, scenario: Scenario, r
     sample.startedAt = new Date(start).toISOString();
     sandbox = await provider.create(scenario, name);
     sample.createApiMs = Date.now() - start;
+    if (sandbox.accessToken) redacted.push(sandbox.accessToken);
     sample.sandboxId = sandbox.id; sample.region = sandbox.region; sample.actualSource = sandbox.source; sample.resources = sandbox.resources;
     const deadline = start + scenario.timeoutSeconds * 1000;
     while (sandbox.state !== 'started') {
@@ -65,8 +66,16 @@ export async function runSample(provider: SandboxProvider, scenario: Scenario, r
     } else if (!command.result.includes(scenario.expectedOutput)) throw new Error('Command output did not contain the expected health marker.');
     sample.workloadMs = Date.now() - workloadStart;
     sample.healthyMs = Date.now() - start;
+    // E2B's create response omits resource sizes. Inspect after measurement so this
+    // extra metadata request does not inflate its startup or health timings.
+    if (sandbox.resources.cpu === null || sandbox.resources.memory === null) {
+      const details = await provider.get(sandbox.id);
+      if (!details) throw new Error('Sandbox disappeared before resource inspection.');
+      sandbox = details;
+    }
+    sample.resources = sandbox.resources; sample.region = sandbox.region; sample.actualSource = sandbox.source;
     sample.status = 'passed';
-  } catch (error) { sample.error = safeError(error, secrets); }
+  } catch (error) { sample.error = safeError(error, redacted); }
   finally {
     // Delete by deterministic name even when create timed out before returning an ID.
     const cleanupStart = Date.now();
@@ -82,13 +91,13 @@ export async function runSample(provider: SandboxProvider, scenario: Scenario, r
       sample.cleanup = sandbox ? 'deleted' : 'not-created';
     } catch (error) {
       sample.cleanup = 'failed'; sample.status = 'failed';
-      sample.error = [sample.error, `Cleanup: ${safeError(error, secrets)}`].filter(Boolean).join('; ');
+      sample.error = [sample.error, `Cleanup: ${safeError(error, redacted)}`].filter(Boolean).join('; ');
     }
     sample.cleanupMs = Date.now() - cleanupStart;
     sample.finishedAt = new Date().toISOString();
     sample.lifetimeMs = Date.now() - Date.parse(sample.startedAt);
     sample.estimatedCostUsd = sandbox && sample.cleanup === 'deleted' ? provider.estimateCost(sandbox.resources, sample.lifetimeMs) : null;
-    sample.output = safeError(sample.output, secrets);
+    sample.output = safeError(sample.output, redacted);
   }
   return sample;
 }

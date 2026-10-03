@@ -74,4 +74,4 @@ jobs:
           curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
             --connect-timeout 10 --max-time 30 \
             https://sandbox-compare.camdenclark.workers.dev/api/dashboard -o /tmp/dashboard.json
-          node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync('/tmp/dashboard.json', 'utf8')); if (!Array.isArray(data.reports) || !data.providers.some(p => p.id === 'daytona' && p.connected)) process.exit(1)"
+          node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync('/tmp/dashboard.json', 'utf8')); if (!Array.isArray(data.reports) || !data.providers.filter(p => p.enabled).every(p => p.connected)) process.exit(1)"

@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 
 const local = parseEnv(readFileSync(new URL('../.dev.vars', import.meta.url), 'utf8'));
 const secrets = {};
-for (const key of ['DAYTONA_API_KEY', 'ADMIN_TOKEN']) {
+for (const key of ['DAYTONA_API_KEY', 'E2B_API_KEY', 'ADMIN_TOKEN']) {
   if (!local[key]) throw new Error(`Set ${key} in .dev.vars first.`);
   secrets[key] = local[key];
 }

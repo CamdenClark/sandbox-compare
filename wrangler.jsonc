@@ -24,7 +24,7 @@
   }],
   "triggers": { "crons": ["0 * * * *"] },
   "observability": { "enabled": true, "head_sampling_rate": 1 },
-  "secrets": { "required": ["DAYTONA_API_KEY", "ADMIN_TOKEN"] },
+  "secrets": { "required": ["DAYTONA_API_KEY", "E2B_API_KEY", "ADMIN_TOKEN"] },
   "vars": {
     "DAYTONA_API_URL": "https://app.daytona.io/api",
     "DAYTONA_TOOLBOX_URL": "https://proxy.app.daytona.io/toolbox"

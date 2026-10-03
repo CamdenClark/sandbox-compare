@@ -86,7 +86,9 @@ describe('cost control validation', () => {
     for (const change of [
       { repetitions: 6 },
       { scenarios: [DEFAULT_SETTINGS.scenarios[0], DEFAULT_SETTINGS.scenarios[0]] },
+      { scenarios: [{ ...DEFAULT_SETTINGS.scenarios[0], provider: 'modal' }] },
       { scenarios: [{ ...DEFAULT_SETTINGS.scenarios[0], provider: 'e2b' }] },
+      { scenarios: [{ ...DEFAULT_SETTINGS.scenarios[0], sourceType: 'template' }] },
       { scenarios: [{ ...DEFAULT_SETTINGS.scenarios[0], sourceType: 'image', source: 'node:22\nRUN curl bad.example' }] },
     ]) expect(() => validateSettings({ ...DEFAULT_SETTINGS, ...change })).toThrow();
     expect(validateSettings(DEFAULT_SETTINGS)).toEqual(DEFAULT_SETTINGS);

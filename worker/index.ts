@@ -1,8 +1,8 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import { timingSafeEqual } from 'node:crypto';
-import { DAYTONA_PRICING, PROVIDERS, nextScheduledTime, type Settings } from '../src/shared';
+import { PROVIDER_PRICING, PROVIDERS, nextScheduledTime, type Settings } from '../src/shared';
 import { control, finishReport, getReports, saveSample } from './store';
-import { getProvider } from './providers';
+import { getProvider, providerConnected, runtimeSecrets } from './providers';
 import { runSample, safeError } from './runner';
 import { validateSettings } from './validation';
 
@@ -24,8 +24,10 @@ async function authorize(request: Request, env: Env): Promise<boolean> {
 export async function startReport(env: Env, trigger: 'manual' | 'scheduled', runnerColo = 'workflow'): Promise<string | null> {
   const state = await control(env);
   const settings: Settings = JSON.parse(state.settings_json);
-  if (!env.DAYTONA_API_KEY) throw new Error('Configure DAYTONA_API_KEY before running benchmarks.');
   if (trigger === 'scheduled' && (!settings.enabled || Date.now() < state.next_run_at)) return null;
+  for (const provider of new Set(settings.scenarios.filter(s => s.enabled).map(s => s.provider))) {
+    if (!providerConnected(provider, env)) throw new Error(`Configure ${provider.toUpperCase()}_API_KEY before running benchmarks.`);
+  }
   const id = crypto.randomUUID(); const now = Date.now();
   const claim = await env.DB.prepare('UPDATE control SET active_run = ?, lease_until = ?, next_run_at = ? WHERE id = 1 AND active_run IS NULL AND (? = 1 OR next_run_at <= ?)').bind(id, now + 6 * 3600000, nextScheduledTime(now, settings.intervalHours), trigger === 'manual' ? 1 : 0, now).run();
   if (!claim.meta.changes) return null;
@@ -35,7 +37,7 @@ export async function startReport(env: Env, trigger: 'manual' | 'scheduled', run
     await env.BENCHMARK.create({ id, params: { reportId: id, settings, runnerColo } satisfies RunParams });
     return id;
   } catch (error) {
-    await finishReport(env, id, 'failed', safeError(error, [env.DAYTONA_API_KEY, env.ADMIN_TOKEN]));
+    await finishReport(env, id, 'failed', safeError(error, runtimeSecrets(env)));
     throw error;
   }
 }
@@ -52,7 +54,7 @@ export class BenchmarkWorkflow extends WorkflowEntrypoint<Env, RunParams> {
       for (let repetition = 1; repetition <= settings.repetitions; repetition++) {
         for (const scenario of settings.scenarios.filter(s => s.enabled)) {
           const sample = await step.do(`measure ${scenario.id} ${repetition}`, { retries: { limit: 0, delay: '1 second' }, timeout: '8 minutes' }, async () => {
-            return runSample(getProvider(scenario.provider, this.env), scenario, reportId, repetition, runnerColo, [this.env.DAYTONA_API_KEY, this.env.ADMIN_TOKEN]);
+            return runSample(getProvider(scenario.provider, this.env), scenario, reportId, repetition, runnerColo, runtimeSecrets(this.env));
           });
           await step.do(`save ${scenario.id} ${repetition}`, async () => { await saveSample(this.env, sample); });
         }
@@ -70,10 +72,10 @@ export class BenchmarkWorkflow extends WorkflowEntrypoint<Env, RunParams> {
           const provider = getProvider(s.provider, this.env);
           for (let r = 1; r <= settings.repetitions; r++) {
             try { await provider.delete(`sbi-${reportId}-${s.id}-${r}`); }
-            catch (cleanupError) { console.error(JSON.stringify({ event: 'cleanup-failed', reportId, error: safeError(cleanupError, [this.env.DAYTONA_API_KEY, this.env.ADMIN_TOKEN]) })); }
+            catch (cleanupError) { console.error(JSON.stringify({ event: 'cleanup-failed', reportId, error: safeError(cleanupError, runtimeSecrets(this.env)) })); }
           }
         }
-        await finishReport(this.env, reportId, 'failed', safeError(error, [this.env.DAYTONA_API_KEY, this.env.ADMIN_TOKEN]));
+        await finishReport(this.env, reportId, 'failed', safeError(error, runtimeSecrets(this.env)));
       });
     }
     return { reportId };
@@ -90,17 +92,17 @@ export default {
         const settings: Settings = JSON.parse(state.settings_json);
         return json({ settings, reports: await getReports(env), activeRun: state.active_run,
           nextRunAt: settings.enabled ? new Date(state.next_run_at).toISOString() : null,
-          providers: PROVIDERS.map(p => ({ ...p, connected: p.id === 'daytona' && Boolean(env.DAYTONA_API_KEY) })), pricing: DAYTONA_PRICING });
+          providers: PROVIDERS.map(p => ({ ...p, connected: providerConnected(p.id, env) })), pricing: PROVIDER_PRICING });
       }
       const reportMatch = url.pathname.match(/^\/api\/reports\/([a-f0-9-]{36})(\.json|\.md)?$/);
       if (reportMatch && request.method === 'GET') {
         const [report] = await getReports(env, reportMatch[1]);
         if (!report) return json({ error: 'Report not found.' }, 404);
         if (reportMatch[2] === '.md') {
-          const lines = [`# Sandbox Index — ${report.startedAt}`, '', `Status: ${report.status}. Trigger: ${report.trigger}. Samples: ${report.samples.length}/${report.expectedSamples}.`, '', '| Workload | Passed | Create median | Ready median | Healthy median | Healthy p95 |', '| --- | --- | --- | --- | --- | --- |', ...report.aggregates.map(a => `| ${a.scenarioName.replaceAll('|', '\\|')} | ${a.passed}/${a.total} | ${a.createMedianMs ?? '—'} ms | ${a.readyMedianMs ?? '—'} ms | ${a.healthyMedianMs ?? '—'} ms | ${a.healthyP95Ms ?? '—'} ms |`), '', 'Times are client-observed from Cloudflare, including network latency. Ready means a verified shell command. Health probes run inside the sandbox. Fresh sandbox instances may use provider caches or warm pools. Small-sample p95 uses linear interpolation and is not a stable tail estimate.', '', `Pricing: ${DAYTONA_PRICING.note}`, DAYTONA_PRICING.source, '', '## Raw samples', '', '```json', JSON.stringify(report.samples, null, 2), '```'];
+          const lines = [`# Sandbox Index — ${report.startedAt}`, '', `Status: ${report.status}. Trigger: ${report.trigger}. Samples: ${report.samples.length}/${report.expectedSamples}.`, '', '| Provider | Workload | Passed | Create median | Ready median | Healthy median | Healthy p95 |', '| --- | --- | --- | --- | --- | --- | --- |', ...report.aggregates.map(a => `| ${a.provider} | ${a.scenarioName.replaceAll('|', '\\|')} | ${a.passed}/${a.total} | ${a.createMedianMs ?? '—'} ms | ${a.readyMedianMs ?? '—'} ms | ${a.healthyMedianMs ?? '—'} ms | ${a.healthyP95Ms ?? '—'} ms |`), '', 'Times are client-observed from Cloudflare, including network latency. Ready means a verified shell command. Health probes run inside the sandbox. Fresh sandbox instances may use provider caches or warm pools. Small-sample p95 uses linear interpolation and is not a stable tail estimate.', '', ...Object.entries(PROVIDER_PRICING).filter(([provider]) => report.aggregates.some(a => a.provider === provider)).flatMap(([provider, price]) => [`Pricing (${provider}): ${price.note}`, price.source]), '', '## Raw samples', '', '```json', JSON.stringify(report.samples, null, 2), '```'];
           return new Response(lines.join('\n'), { headers: { 'Content-Type': 'text/markdown; charset=utf-8', 'Content-Disposition': `attachment; filename="sandbox-report-${report.id}.md"` } });
         }
-        return Response.json({ ...report, pricing: DAYTONA_PRICING }, { headers: { 'Cache-Control': 'no-store', ...(reportMatch[2] ? { 'Content-Disposition': `attachment; filename="sandbox-report-${report.id}.json"` } : {}) } });
+        return Response.json({ ...report, pricing: PROVIDER_PRICING }, { headers: { 'Cache-Control': 'no-store', ...(reportMatch[2] ? { 'Content-Disposition': `attachment; filename="sandbox-report-${report.id}.json"` } : {}) } });
       }
       if (request.method === 'POST' || request.method === 'PUT') {
         const origin = request.headers.get('Origin');
@@ -122,7 +124,7 @@ export default {
       }
       return json({ error: 'Not found.' }, 404);
     } catch (error) {
-      const message = safeError(error, [env.DAYTONA_API_KEY, env.ADMIN_TOKEN]);
+      const message = safeError(error, runtimeSecrets(env));
       console.error(JSON.stringify({ event: 'api-error', path: url.pathname, error: message }));
       return json({ error: message }, url.pathname === '/api/settings' ? 400 : 500);
     }
@@ -141,7 +143,7 @@ export default {
           }
         } catch (error) {
           if (state.lease_until && state.lease_until < Date.now()) await finishReport(env, state.active_run, 'failed', 'Workflow lease expired. Sandbox TTL handles abandoned instances.');
-          else console.error(JSON.stringify({ event: 'workflow-reconcile-error', error: safeError(error, [env.DAYTONA_API_KEY, env.ADMIN_TOKEN]) }));
+          else console.error(JSON.stringify({ event: 'workflow-reconcile-error', error: safeError(error, runtimeSecrets(env)) }));
         }
       }
       await startReport(env, 'scheduled');

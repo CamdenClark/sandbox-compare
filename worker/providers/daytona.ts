@@ -1,9 +1,6 @@
 import { DAYTONA_PRICING, type Scenario } from '../../src/shared';
-import type { CommandResult, SandboxHandle, SandboxProvider } from './types';
-
-export class ProviderError extends Error {
-  constructor(message: string, public status: number) { super(message); }
-}
+import { ProviderError, type CommandResult, type SandboxHandle, type SandboxProvider } from './types';
+import { readText } from './http';
 interface DaytonaSandbox { id: string; state: string; target: string; snapshot: string; cpu: number; memory: number; disk: number; toolboxProxyUrl: string; errorReason?: string }
 
 export function createPayload(s: Scenario, name: string) {
@@ -16,24 +13,6 @@ export function createPayload(s: Scenario, name: string) {
     autoDeleteInterval: 0, ttlMinutes: 10, labels: { 'sandbox-index': 'benchmark', 'benchmark-name': name } };
 }
 
-async function readBounded(response: Response, maxBytes = 65536): Promise<string> {
-  if (!response.body) return '';
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = []; let length = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      length += value.byteLength;
-      if (length > maxBytes) throw new Error('Provider response exceeded 64 KiB; keep benchmark output small.');
-      chunks.push(value);
-    }
-  } finally { await reader.cancel(); }
-  const buffer = new Uint8Array(length); let offset = 0;
-  for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
-  return new TextDecoder().decode(buffer);
-}
-
 export class DaytonaProvider implements SandboxProvider {
   constructor(private env: Env) {}
   private async request<T>(url: string, method = 'GET', body?: unknown, timeoutMs = 30000): Promise<T> {
@@ -42,7 +21,7 @@ export class DaytonaProvider implements SandboxProvider {
       method, headers: { Authorization: `Bearer ${this.env.DAYTONA_API_KEY}`, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
     });
-    const text = await readBounded(response);
+    const text = await readText(response);
     if (!response.ok) throw new ProviderError(`Daytona HTTP ${response.status}: ${text.slice(0, 500)}`, response.status);
     return text ? JSON.parse(text) as T : undefined as T;
   }
@@ -74,7 +53,8 @@ export class DaytonaProvider implements SandboxProvider {
     try { await this.request(`${this.env.DAYTONA_API_URL}/sandbox/${encodeURIComponent(idOrName)}`, 'DELETE'); }
     catch (error) { if (!(error instanceof ProviderError && error.status === 404)) throw error; }
   }
-  estimateCost(r: SandboxHandle['resources'], lifetimeMs: number): number {
+  estimateCost(r: SandboxHandle['resources'], lifetimeMs: number): number | null {
+    if (r.cpu === null || r.memory === null || r.disk === null) return null;
     return lifetimeMs / 3600000 * (r.cpu * DAYTONA_PRICING.cpuHour + r.memory * DAYTONA_PRICING.memoryGiBHour + r.disk * DAYTONA_PRICING.diskGiBHour);
   }
 }

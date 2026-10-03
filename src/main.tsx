@@ -1,6 +1,6 @@
 import { StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { DAYTONA_PRICING, PROVIDERS, type Dashboard, type Report, type Scenario } from './shared';
+import { PROVIDER_PRICING, PROVIDERS, type Dashboard, type Report, type Scenario } from './shared';
 import './styles.css';
 
 const duration = (value: number | null | undefined) => value == null ? '—' : value >= 1000
@@ -83,7 +83,7 @@ function App() {
                   return <tr key={result.scenarioId}>
                     <th scope="row" className="provider">{providerName(result.provider)}</th>
                     <td className="workload-cell">{result.scenarioName}</td>
-                    <td className="container-cell"><code>{result.source}</code><span>{result.region.toUpperCase()}{sample && ` · ${sample.resources.cpu} vCPU · ${sample.resources.memory} GiB`}</span></td>
+                    <td className="container-cell"><code>{result.source}</code><span>{(sample?.region ?? result.region).replace('provider-default', 'Provider default')}{sample?.resources.cpu != null && sample.resources.memory != null && ` · ${sample.resources.cpu} vCPU · ${sample.resources.memory} GiB`}</span></td>
                     <td className="number create" data-label="Create API">{duration(result.createMedianMs)}</td>
                     <td className="number ready" data-label="Command ready">{duration(result.readyMedianMs)}</td>
                     <td className="number healthy" data-label="Healthy">{duration(result.healthyMedianMs)}</td>
@@ -101,7 +101,7 @@ function App() {
             <div><h2 id="history-title">Time to healthy</h2><p>Median for each measurement batch with the same workload configuration.</p></div>
             <label className="workload-select">Workload
               <select value={workload.id} onChange={event => setWorkloadId(event.target.value)}>
-                {workloads.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                {workloads.map(item => <option key={item.id} value={item.id}>{providerName(item.provider)} · {item.name}</option>)}
               </select>
             </label>
           </div>
@@ -116,14 +116,15 @@ function App() {
             <div><dt>Healthy</dt><dd>From the create request to verified workload output. HTTP servers must return the expected response to a probe inside the sandbox.</dd></div>
           </dl>
           <p>Each evaluation creates a separate sandbox and deletes it afterward. Provider image caches and warm pools may be used. Startup is polled every 200 ms; health checks every 250 ms. These timings include those delays and API latency.</p>
+          <p>The same commands run on each provider’s prepared image. CPU and memory come from the provider’s sandbox details and are shown above. E2B assigns its default region; the API does not identify its location. These are comparisons of the listed configurations.</p>
           <p>Results use the median of successful evaluations. An evaluation passes only after workload health and sandbox deletion are confirmed. Each batch currently uses {latest?.settings.repetitions ?? data.settings.repetitions} evaluations per workload; small batches give preliminary results.</p>
         </section>
 
-        {latest?.aggregates.some(result => result.provider === 'daytona') && <section className="pricing" aria-labelledby="pricing-title">
-          <div className="section-heading"><h2 id="pricing-title">Daytona pricing</h2><a href={DAYTONA_PRICING.source} target="_blank" rel="noreferrer">Source ↗</a></div>
-          <p className="price-line"><span><strong>${DAYTONA_PRICING.cpuHour}</strong> / vCPU-hour</span><span><strong>${DAYTONA_PRICING.memoryGiBHour}</strong> / GiB-hour of memory</span><span><strong>${DAYTONA_PRICING.diskGiBHour}</strong> / GiB-hour of storage</span></p>
-          <p className="pricing-note">Published rates checked {DAYTONA_PRICING.checkedAt}. Billed per second. Storage is charged after the first 5 GiB free; credits and account discounts may affect actual cost.</p>
-        </section>}
+        {Object.entries(PROVIDER_PRICING).filter(([id]) => latest?.aggregates.some(result => result.provider === id)).map(([id, price]) => <section key={id} className="pricing" aria-labelledby={`${id}-pricing-title`}>
+          <div className="section-heading"><h2 id={`${id}-pricing-title`}>{providerName(id)} pricing</h2><a href={price.source} target="_blank" rel="noreferrer">Source ↗</a></div>
+          <p className="price-line"><span><strong>${price.cpuHour}</strong> / vCPU-hour</span><span><strong>${price.memoryGiBHour}</strong> / GiB-hour of memory</span><span>{price.diskGiBHour ? <><strong>${price.diskGiBHour}</strong> / GiB-hour of storage</> : 'Storage included'}</span></p>
+          <p className="pricing-note">Published rates checked {price.checkedAt}. Billed per second. {price.note}</p>
+        </section>)}
       </>}
 
       <footer><span>Sandbox Index</span>{latest && <span><a href={`/api/reports/${latest.id}.json`}>Measurements (JSON)</a><a href={`/api/reports/${latest.id}.md`}>Methodology and data (Markdown)</a></span>}</footer>
